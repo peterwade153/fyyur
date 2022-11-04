@@ -10,6 +10,7 @@ import babel
 from flask import Flask, render_template, request, Response, flash, redirect, url_for
 from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import load_only
 from flask_migrate import Migrate
 import logging
 from logging import Formatter, FileHandler
@@ -305,29 +306,32 @@ def create_venue_submission():
 
 @app.route('/venues/<venue_id>', methods=['DELETE'])
 def delete_venue(venue_id):
+    try:
+        venue = Venue.query.get(venue_id)
+        if venue:
+            name = venue.name
+            db.session.delete(venue)
+            db.session.commit()
+        return redirect(url_for('index'))
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        return redirect(url_for('index'))
+
   # TODO: Complete this endpoint for taking a venue_id, and using
   # SQLAlchemy ORM to delete a record. Handle cases where the session commit could fail.
 
   # BONUS CHALLENGE: Implement a button to delete a Venue on a Venue Page, have it so that
   # clicking that button delete it from the db then redirect the user to the homepage
-  return None
 
 #  Artists
 #  ----------------------------------------------------------------
 @app.route('/artists')
 def artists():
+    data = db.session.query(Artist).options(load_only("id", "name")).all()
   # TODO: replace with real data returned from querying the database
-  data=[{
-    "id": 4,
-    "name": "Guns N Petals",
-  }, {
-    "id": 5,
-    "name": "Matt Quevedo",
-  }, {
-    "id": 6,
-    "name": "The Wild Sax Band",
-  }]
-  return render_template('pages/artists.html', artists=data)
+    return render_template('pages/artists.html', artists=data)
+
 
 @app.route('/artists/search', methods=['POST'])
 def search_artists():
@@ -486,15 +490,53 @@ def create_artist_form():
 
 @app.route('/artists/create', methods=['POST'])
 def create_artist_submission():
+    data = request.form
+    name = data.get('name')
+    city = data.get('city')
+    state = data.get('state')
+    phone = data.get('phone')
+    genres = data.getlist('genres')
+    seeking_talent = True if data.get('seeking_talent') == 'Yes' else False
+    seeking_description = data.get('seeking_description')
+    image_link = data.get('image_link')
+    website = data.get('.website_link')
+    facebook_link = data.get('facebook_link')
+
+    try:
+        new_artist = Artist(
+            name=name,
+            city=city,
+            state=state,
+            phone=phone,
+            seeking_talent=seeking_talent,
+            seeking_description=seeking_description,
+            image_link=image_link,
+            website=website,
+            facebook_link=facebook_link
+        )
+        db.session.add(new_artist)
+        db.session.commit()
+        db.session.refresh(new_artist)
+
+        for genre in genres:
+            artist_genre = Artist_Genre(genre=genre)
+            artist_genre.artist_id = new_artist.id
+            db.session.add(artist_genre)
+        db.session.commit()
+        flash('Artist ' + request.form['name'] + ' was successfully listed!')
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        flash('Artist ' + request.form['name'] + ' listing failed!', 'error')
   # called upon submitting the new artist listing form
   # TODO: insert form data as a new Venue record in the db, instead
   # TODO: modify data to be the data object returned from db insertion
 
   # on successful db insert, flash success
-  flash('Artist ' + request.form['name'] + ' was successfully listed!')
+#   flash('Artist ' + request.form['name'] + ' was successfully listed!')
   # TODO: on unsuccessful db insert, flash an error instead.
   # e.g., flash('An error occurred. Artist ' + data.name + ' could not be listed.')
-  return render_template('pages/home.html')
+    return render_template('pages/home.html')
 
 
 #  Shows
