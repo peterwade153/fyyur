@@ -2,7 +2,9 @@
 # Imports
 #----------------------------------------------------------------------------#
 
+from dbm import gnu
 import json
+from pickle import TRUE
 import dateutil.parser
 import babel
 from flask import Flask, render_template, request, Response, flash, redirect, url_for
@@ -31,27 +33,6 @@ migrate = Migrate(app, db)
 # Models.
 #----------------------------------------------------------------------------#
 
-genre_venue = db.Table(
-    'genre_venue',
-    db.Column('genre_id', db.Integer, db.ForeignKey('Genre.id'), primary_key=True),
-    db.Column('venue_id', db.Integer, db.ForeignKey('Venue.id'), primary_key=True)
-)
-
-
-genre_artist = db.Table(
-    'genre_artist',
-    db.Column('genre_id', db.Integer, db.ForeignKey('Genre.id'), primary_key=True),
-    db.Column('artist_id', db.Integer, db.ForeignKey('Artist.id'), primary_key=True)
-)
-
-
-class Genre(db.Model):
-    __tablename__ = 'Genre'
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
-
-
 class Venue(db.Model):
     __tablename__ = 'Venue'
 
@@ -67,11 +48,22 @@ class Venue(db.Model):
     seeking_description = db.Column(db.String(120))
     seeking_talent = db.Column(db.Boolean, default=False)
 
-    genres = db.relationship('Genre', secondary=genre_venue, backref=db.backref('venues'))
+    genres = db.relationship('Venue_Genre', backref='venues', lazy='dynamic')
     shows = db.relationship('Show', backref='venue', lazy='dynamic')
 
     def __repr__(self):
         return f"Venue: {self.id} - {self.name}"
+
+
+class Venue_Genre(db.Model):
+    __tablename__ = 'Venue_Genre'
+
+    id = db.Column(db.Integer, primary_key=True)
+    venue_id = db.Column(db.Integer, db.ForeignKey('Venue.id', ondelete="CASCADE"), nullable=False)
+    genre = db.Column(db.String(30), nullable=False)
+
+    def __repr__(self):
+        return f"Venue_Genre: {self.id} - {self.venue_id} - {self.genre}"
 
 
 class Artist(db.Model):
@@ -89,11 +81,22 @@ class Artist(db.Model):
     seeking_description = db.Column(db.String(120))
     seeking_talent = db.Column(db.Boolean, default=False)
 
-    genres = db.relationship('Genre', secondary=genre_venue, backref=db.backref('artists'))
+    genres = db.relationship('Artist_Genre', backref='artists', lazy='dynamic')
     shows = db.relationship('Show', backref='artist', lazy='dynamic')
 
     def __repr__(self):
         return f"Artist: {self.id} - {self.name}"
+
+
+class Artist_Genre(db.Model):
+    __tablename__ = 'Artist_Genre'
+
+    id = db.Column(db.Integer, primary_key=True)
+    artist_id = db.Column(db.Integer, db.ForeignKey('Artist.id', ondelete="CASCADE"), nullable=False)
+    genre = db.Column(db.String(30), nullable=False)
+
+    def __repr__(self):
+        return f"Arstist_Genre: {self.id} - {self.artist_id} - {self.genre}"
 
 
 class Show(db.Model):
@@ -106,8 +109,6 @@ class Show(db.Model):
 
     def __repr__(self):
         return f"Show: {self.id}"
-
-
 
   # TODO: implement any missing fields, as a database migration using Flask-Migrate
 
@@ -141,30 +142,38 @@ def index():
 
 @app.route('/venues')
 def venues():
+    res_data = []
+    venue_cities = db.session.query(Venue).distinct(Venue.city, Venue.state).all()
+    for city in venue_cities:
+        data = {"city": city[0], "state": city[1]}
+
+
+
+
   # TODO: replace with real venues data.
   #       num_upcoming_shows should be aggregated based on number of upcoming shows per venue.
-  data=[{
-    "city": "San Francisco",
-    "state": "CA",
-    "venues": [{
-      "id": 1,
-      "name": "The Musical Hop",
-      "num_upcoming_shows": 0,
-    }, {
-      "id": 3,
-      "name": "Park Square Live Music & Coffee",
-      "num_upcoming_shows": 1,
-    }]
-  }, {
-    "city": "New York",
-    "state": "NY",
-    "venues": [{
-      "id": 2,
-      "name": "The Dueling Pianos Bar",
-      "num_upcoming_shows": 0,
-    }]
-  }]
-  return render_template('pages/venues.html', areas=data);
+#   data=[{
+#     "city": "San Francisco",
+#     "state": "CA",
+#     "venues": [{
+#       "id": 1,
+#       "name": "The Musical Hop",
+#       "num_upcoming_shows": 0,
+#     }, {
+#       "id": 3,
+#       "name": "Park Square Live Music & Coffee",
+#       "num_upcoming_shows": 1,
+#     }]
+#   }, {
+#     "city": "New York",
+#     "state": "NY",
+#     "venues": [{
+#       "id": 2,
+#       "name": "The Dueling Pianos Bar",
+#       "num_upcoming_shows": 0,
+#     }]
+#   }]
+    return render_template('pages/venues.html', areas=data)
 
 @app.route('/venues/search', methods=['POST'])
 def search_venues():
@@ -275,15 +284,49 @@ def create_venue_form():
 
 @app.route('/venues/create', methods=['POST'])
 def create_venue_submission():
-  # TODO: insert form data as a new Venue record in the db, instead
-  # TODO: modify data to be the data object returned from db insertion
+    data = request.form
+    name = data.get('name')
+    city = data.get('city')
+    state = data.get('state')
+    address = data.get('address')
+    phone = data.get('phone')
+    genres = data.getlist('genres')
+    seeking_talent = True if data.get('seeking_talent') == 'Yes' else False
+    seeking_description = data.get('seeking_description')
+    image_link = data.get('image_link')
+    website = data.get('.website_link')
+    facebook_link = data.get('facebook_link')
 
-  # on successful db insert, flash success
-  flash('Venue ' + request.form['name'] + ' was successfully listed!')
-  # TODO: on unsuccessful db insert, flash an error instead.
-  # e.g., flash('An error occurred. Venue ' + data.name + ' could not be listed.')
-  # see: http://flask.pocoo.org/docs/1.0/patterns/flashing/
-  return render_template('pages/home.html')
+    try:
+        new_venue = Venue(
+            name=name,
+            city=city,
+            state=state,
+            address=address,
+            phone=phone,
+            seeking_talent=seeking_talent,
+            seeking_description=seeking_description,
+            image_link=image_link,
+            website=website,
+            facebook_link=facebook_link
+        )
+        db.session.add(new_venue)
+        db.session.commit()
+        db.session.refresh(new_venue)
+
+        for genre in genres:
+            venue_genre = Venue_Genre(genre=genre)
+            venue_genre.venue_id = new_venue.id
+            db.session.add(venue_genre)
+        db.session.commit()
+        flash('Venue ' + request.form['name'] + ' was successfully listed!')
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        flash('Venue ' + request.form['name'] + ' listing failed!', 'error')
+
+    db.session.close()
+    return render_template('pages/home.html')
 
 @app.route('/venues/<venue_id>', methods=['DELETE'])
 def delete_venue(venue_id):
